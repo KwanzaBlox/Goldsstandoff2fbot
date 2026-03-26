@@ -9,196 +9,146 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telegram.constants import ParseMode
 
-# ТОКЕН ПРЯМО В КОДЕ
+# ТОКЕН
 TOKEN = "8445466695:AAGORyjHM8ghSs2jhKblwwrO0-aJNp6Zuq8"
 
-# Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Словарь для хранения состояний пользователей
 user_data: Dict[int, Dict] = {}
 
-# Задания
-TASKS = {
-    1: {
-        "200": {
-            "tasks": ["yandex"],
-            "rewards": 200,
-            "task_count": 1
-        },
-        "1000": {
-            "tasks": ["yandex", "sberprime"],
-            "rewards": 1000,
-            "task_count": 2
-        },
-        "5000": {
-            "tasks": ["yandex", "sberprime", "24tv"],
-            "rewards": 5000,
-            "task_count": 3
-        }
+# ЗАДАНИЯ ПО ПОРЯДКУ
+TASKS_ORDER = ["yandex", "sberprime", "24tv"]
+
+# ИНФОРМАЦИЯ О ЗАДАНИЯХ
+TASK_INFO = {
+    "yandex": {
+        "name": "📱 СКАЧАТЬ ЯНДЕКС БРАУЗЕР",
+        "description": "Скачай Яндекс Браузер по ссылке и установи",
+        "link": "https://vk.cc/cVUvvJ",
+        "button": "🔽 СКАЧАТЬ ЯНДЕКС БРАУЗЕР"
+    },
+    "sberprime": {
+        "name": "💳 СБЕРПРАЙМ ЗА 1 РУБЛЬ",
+        "description": "Оформи подписку СберПрайм за 1 рубль (без VPN)",
+        "link": "https://vk.cc/cVUvEb",
+        "button": "💳 ОФОРМИТЬ СБЕРПРАЙМ"
+    },
+    "24tv": {
+        "name": "🎬 АКТИВИРОВАТЬ ПРОМОКОД 24TV",
+        "description": "Перейди по ссылке и активируй промокод",
+        "link": "https://vk.cc/cVUwtW",
+        "button": "🎬 АКТИВИРОВАТЬ ПРОМОКОД"
     }
 }
 
-# Ссылки на задания
-TASK_LINKS = {
-    "yandex": "https://vk.cc/cVUvvJ",
-    "sberprime": "https://vk.cc/cVUvEb",
-    "24tv": "https://vk.cc/cVUwtW"
-}
-
-TASK_NAMES = {
-    "yandex": "Скачать Яндекс Браузер",
-    "sberprime": "Оформить подписку СберПрайм за 1 рубль",
-    "24tv": "Активировать промокод в сервисе 24TV"
-}
-
-# Функция для генерации промокода
 def generate_promo_code() -> str:
     characters = string.ascii_letters + string.digits
     length = random.randint(9, 12)
     return ''.join(random.choice(characters) for _ in range(length))
 
-# Класс для управления состоянием пользователя
 class UserState:
     def __init__(self, user_id: int, username: str):
         self.user_id = user_id
         self.username = username
-        self.selected_reward = None
-        self.completed_tasks = []
-        self.waiting_for_screenshot = False
         self.current_task_index = 0
-        self.screenshot_task = None
-        self.promo_code = None
-        self.reward_claimed = False
-        self.completed = False
-        self.screenshot_check_task = None
-
-    def reset(self):
-        self.selected_reward = None
-        self.completed_tasks = []
         self.waiting_for_screenshot = False
-        self.current_task_index = 0
-        self.screenshot_task = None
-        self.promo_code = None
+        self.current_task_key = None
         self.reward_claimed = False
-        self.completed = False
-        if self.screenshot_check_task:
-            self.screenshot_check_task.cancel()
+        self.promo_code = None
+        self.completed_tasks = []
 
-# Главное меню
-async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int = None):
-    if user_id is None:
-        user_id = update.effective_user.id
-    
+async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("200 G-Coins", callback_data="reward_200")],
-        [InlineKeyboardButton("1000 G-Coins", callback_data="reward_1000")],
-        [InlineKeyboardButton("5000 G-Coins", callback_data="reward_5000")]
+        [InlineKeyboardButton("🎁 ПОЛУЧИТЬ 5000 G-Coins", callback_data="start_tasks")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     user = update.effective_user
-    welcome_text = (
+    text = (
         f"🎮 ПОЛУЧИ ГОЛДУ STANDOFF 2 БЕСПЛАТНО! 🎮\n\n"
         f"Привет, {user.first_name}! 👋\n\n"
         f"Активируй скрытый промокод разработчиков.\n\n"
-        f"💰 Выбери сколько хочешь получить:\n"
-        f"   1️⃣ 200 G-Coins\n"
-        f"   2️⃣ 1000 G-Coins\n"
-        f"   3️⃣ 5000 G-Coins\n"
+        f"💰 Выполни 3 задания и получи 5000 G-Coins!\n\n"
         f"👇 Нажми на кнопку:"
     )
     
     if update.callback_query:
-        await update.callback_query.edit_message_text(
-            text=welcome_text,
-            reply_markup=reply_markup,
-            parse_mode=ParseMode.HTML
-        )
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
     else:
-        await update.message.reply_text(
-            text=welcome_text,
-            reply_markup=reply_markup,
-            parse_mode=ParseMode.HTML
-        )
+        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 
-# Обработчик выбора награды
-async def handle_reward_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     user_id = query.from_user.id
-    reward_key = query.data.split("_")[1]
     
-    if user_id not in user_data:
-        user_data[user_id] = UserState(user_id, query.from_user.username)
+    # Проверяем, не получал ли уже награду
+    if user_id in user_data:
+        user = user_data[user_id]
+        if user.reward_claimed:
+            await query.edit_message_text("❌ Ты уже получил промокод! Нельзя проходить задания повторно.", parse_mode=ParseMode.HTML)
+            return
     
-    user = user_data[user_id]
-    
-    if user.reward_claimed:
-        await query.edit_message_text(
-            text="❌ Вы уже получили награду! Нельзя пройти задания повторно.",
-            parse_mode=ParseMode.HTML
-        )
-        return
-    
-    if user.selected_reward is not None and not user.completed:
-        await query.edit_message_text(
-            text="⚠️ У вас уже есть активное задание. Пожалуйста, завершите его или начните заново командой /start",
-            parse_mode=ParseMode.HTML
-        )
-        return
-    
-    user.selected_reward = reward_key
-    user.completed_tasks = []
+    # Создаем нового пользователя
+    user = UserState(user_id, query.from_user.username)
     user.current_task_index = 0
-    user.completed = False
+    user.completed_tasks = []
     
-    await start_next_task(query, user, reward_key)
+    user_data[user_id] = user
+    
+    await show_current_task(query, user)
 
-async def start_next_task(query, user: UserState, reward_key: str):
-    tasks_list = TASKS[1][reward_key]["tasks"]
-    
-    if user.current_task_index >= len(tasks_list):
+async def show_current_task(query, user: UserState):
+    # Проверяем, все ли задания выполнены
+    if user.current_task_index >= len(TASKS_ORDER):
+        # ВСЕ 3 ЗАДАНИЯ ВЫПОЛНЕНЫ - ВЫДАЕМ ПРОМОКОД НА 5000
         user.promo_code = generate_promo_code()
         user.reward_claimed = True
-        user.completed = True
-        
-        reward_amount = TASKS[1][reward_key]["rewards"]
         
         await query.edit_message_text(
-            text=f"✅ Поздравляем! Вы выполнили все задания!\n\n"
-                 f"🎁 Ваш промокод на {reward_amount} G-Coins:\n"
+            text=f"✅ ПОЗДРАВЛЯЮ! ТЫ ПРОШЕЛ ВСЕ 3 ЗАДАНИЯ! 🎉🎉🎉\n\n"
+                 f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                 f"🎁 ТВОЙ ПРОМОКОД НА 5000 G-Coins:\n"
                  f"<code>{user.promo_code}</code>\n\n"
-                 f"🔑 Активируйте его в игре Standoff 2 и получите голду!\n\n"
+                 f"🔑 Активируй в игре Standoff 2\n"
+                 f"и получи голду бесплатно!\n"
+                 f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
                  f"Спасибо за участие! 🎮",
             parse_mode=ParseMode.HTML
         )
         return
     
-    task_key = tasks_list[user.current_task_index]
-    task_name = TASK_NAMES[task_key]
-    task_link = TASK_LINKS[task_key]
+    # Показываем текущее задание
+    task_key = TASKS_ORDER[user.current_task_index]
+    task = TASK_INFO[task_key]
     
-    task_number = user.current_task_index + 1
+    current = user.current_task_index + 1
     
     text = (
-        f"📋 <b>Задание {task_number}</b>\n\n"
-        f"{task_name}\n\n"
-        f"🔗 <a href='{task_link}'>Выполнить задание</a>\n\n"
-        f"📸 После выполнения отправьте скриншот подтверждения.\n"
-        f"⏱ Проверка займет 5 секунд."
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📋 <b>ЗАДАНИЕ {current} ИЗ 3</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"<b>{task['name']}</b>\n\n"
+        f"{task['description']}\n\n"
+        f"🔗 <a href='{task['link']}'>👉 {task['button']} 👈</a>\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📸 <b>КАК ПОДТВЕРДИТЬ:</b>\n"
+        f"После выполнения отправь СКРИНШОТ подтверждения\n"
+        f"⏱ Автопроверка займет 5 секунд\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"❌ Отмена - нажми /start"
     )
     
-    keyboard = [[InlineKeyboardButton("◀️ Отмена", callback_data="cancel")]]
+    keyboard = [[InlineKeyboardButton("◀️ ОТМЕНИТЬ ВСЕ", callback_data="cancel")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     user.waiting_for_screenshot = True
-    user.screenshot_task = task_key
+    user.current_task_key = task_key
     
     await query.edit_message_text(
         text=text,
@@ -212,35 +162,44 @@ async def handle_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     user_id = query.from_user.id
-    
     if user_id in user_data:
-        user_data[user_id].reset()
         del user_data[user_id]
     
-    await main_menu(update, context, user_id)
+    await main_menu(update, context)
 
 async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
     if user_id not in user_data:
-        await update.message.reply_text("❌ Сначала выберите награду в меню /start")
+        await update.message.reply_text("❌ Сначала нажми /start и выбери 'ПОЛУЧИТЬ 5000 G-Coins'")
         return
     
     user = user_data[user_id]
     
-    if not user.waiting_for_screenshot:
-        await update.message.reply_text("❌ Сейчас вы не должны отправлять скриншот. Используйте /start для начала.")
+    if user.reward_claimed:
+        await update.message.reply_text("❌ Ты уже получил промокод!")
         return
     
+    if not user.waiting_for_screenshot:
+        await update.message.reply_text("❌ Сейчас не нужно отправлять скриншот. Нажми /start")
+        return
+    
+    # Получаем фото
     photo = update.message.photo[-1]
     user.waiting_for_screenshot = False
     
+    current_num = user.current_task_index + 1
+    task_name = TASK_INFO[user.current_task_key]["name"]
+    
     checking_msg = await update.message.reply_text(
-        "⏳ Проверка скриншота... Подождите 5 секунд.\n"
-        "Пожалуйста, не отправляйте новые сообщения."
+        f"⏳ ПРОВЕРКА ЗАДАНИЯ {current_num}/3...\n\n"
+        f"📋 {task_name}\n\n"
+        f"🔍 Идет автоматическая проверка скриншота...\n"
+        f"⏱ Подожди 5 секунд!\n\n"
+        f"Не отправляй новые сообщения!"
     )
     
-    async def check_screenshot():
+    async def check_and_next():
         await asyncio.sleep(5)
         
         try:
@@ -248,49 +207,70 @@ async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
         
-        user.completed_tasks.append(user.screenshot_task)
+        # Задание выполнено
+        completed_task = user.current_task_key
+        user.completed_tasks.append(completed_task)
         user.current_task_index += 1
         
-        success_msg = await update.message.reply_text(
-            "✅ Скриншот принят! Задание выполнено.\n"
-            "Переходим к следующему заданию..."
-        )
-        
-        await asyncio.sleep(2)
-        await success_msg.delete()
-        
-        class DummyQuery:
-            def __init__(self, user_id):
-                self.from_user = type('obj', (object,), {'id': user_id})
+        if user.current_task_index >= len(TASKS_ORDER):
+            # ВСЕ ЗАДАНИЯ ВЫПОЛНЕНЫ
+            await update.message.reply_text(
+                f"✅ ЗАДАНИЕ {current_num}/3 ВЫПОЛНЕНО!\n\n"
+                f"🎉 ПОЗДРАВЛЯЮ! ТЫ ВЫПОЛНИЛ ВСЕ 3 ЗАДАНИЯ!\n\n"
+                f"🎁 Сейчас получишь промокод на 5000 G-Coins..."
+            )
+            await asyncio.sleep(2)
             
-            async def edit_message_text(self, text, parse_mode=None, reply_markup=None):
-                await update.message.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup, disable_web_page_preview=True)
-        
-        dummy_query = DummyQuery(user_id)
-        await start_next_task(dummy_query, user, user.selected_reward)
+            class DummyQuery:
+                def __init__(self, user_id):
+                    self.from_user = type('obj', (object,), {'id': user_id})
+                async def edit_message_text(self, text, reply_markup=None, parse_mode=None, disable_web_page_preview=None):
+                    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=parse_mode, disable_web_page_preview=disable_web_page_preview)
+            
+            dummy = DummyQuery(user_id)
+            await show_current_task(dummy, user)
+        else:
+            # ПЕРЕХОДИМ К СЛЕДУЮЩЕМУ ЗАДАНИЮ
+            await update.message.reply_text(
+                f"✅ ЗАДАНИЕ {current_num}/3 ВЫПОЛНЕНО!\n\n"
+                f"Отлично! Переходим к заданию {current_num + 1}/3... 🚀"
+            )
+            await asyncio.sleep(2)
+            
+            class DummyQuery:
+                def __init__(self, user_id):
+                    self.from_user = type('obj', (object,), {'id': user_id})
+                async def edit_message_text(self, text, reply_markup=None, parse_mode=None, disable_web_page_preview=None):
+                    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=parse_mode, disable_web_page_preview=disable_web_page_preview)
+            
+            dummy = DummyQuery(user_id)
+            await show_current_task(dummy, user)
     
-    asyncio.create_task(check_screenshot())
+    asyncio.create_task(check_and_next())
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    
     if user_id in user_data:
-        user_data[user_id].reset()
         del user_data[user_id]
-    
     await main_menu(update, context)
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
     
-    if data.startswith("reward_"):
-        await handle_reward_selection(update, context)
+    if data == "start_tasks":
+        await start_tasks(update, context)
     elif data == "cancel":
         await handle_cancel(update, context)
 
 def main():
-    print("🚀 Бот запускается...")
+    print("🚀 БОТ ЗАПУСКАЕТСЯ...")
+    print("🎮 Standoff 2 Gold Bot - 5000 G-Coins")
+    print("📋 Задания по порядку:")
+    print("   1. Яндекс Браузер")
+    print("   2. СберПрайм")
+    print("   3. 24TV")
+    print("💰 Награда: 5000 G-Coins после 3 заданий")
     application = Application.builder().token(TOKEN).build()
     
     application.add_handler(CommandHandler("start", start))
