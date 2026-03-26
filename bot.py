@@ -32,8 +32,8 @@ TASK_INFO = {
         "button": "🔽 СКАЧАТЬ ЯНДЕКС БРАУЗЕР"
     },
     "sberprime": {
-        "name": "💳 СБЕРПРАЙМ ЗА 1 РУБЛЬ",
-        "description": "Оформи подписку СберПрайм за 1 рубль (без VPN)",
+        "name": "💳 <b>СБЕРПРАЙМ ЗА 1 РУБЛЬ</b>",
+        "description": "<b>Оформи подписку СберПрайм за 1 рубль</b>\n(если ссылка не открывается, выключи VPN)",
         "link": "https://vk.cc/cVUvEb",
         "button": "💳 ОФОРМИТЬ СБЕРПРАЙМ"
     },
@@ -87,14 +87,12 @@ async def start_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_id = query.from_user.id
     
-    # Проверяем, не получал ли уже награду
     if user_id in user_data:
         user = user_data[user_id]
         if user.reward_claimed:
             await query.edit_message_text("❌ Ты уже получил промокод! Нельзя проходить задания повторно.", parse_mode=ParseMode.HTML)
             return
     
-    # Создаем нового пользователя
     user = UserState(user_id, query.from_user.username)
     user.current_task_index = 0
     user.completed_tasks = []
@@ -104,9 +102,7 @@ async def start_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_current_task(query, user)
 
 async def show_current_task(query, user: UserState):
-    # Проверяем, все ли задания выполнены
     if user.current_task_index >= len(TASKS_ORDER):
-        # ВСЕ 3 ЗАДАНИЯ ВЫПОЛНЕНЫ - ВЫДАЕМ ПРОМОКОД НА 5000
         user.promo_code = generate_promo_code()
         user.reward_claimed = True
         
@@ -123,7 +119,6 @@ async def show_current_task(query, user: UserState):
         )
         return
     
-    # Показываем текущее задание
     task_key = TASKS_ORDER[user.current_task_index]
     task = TASK_INFO[task_key]
     
@@ -184,7 +179,6 @@ async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Сейчас не нужно отправлять скриншот. Нажми /start")
         return
     
-    # Получаем фото
     photo = update.message.photo[-1]
     user.waiting_for_screenshot = False
     
@@ -207,13 +201,11 @@ async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
         
-        # Задание выполнено
         completed_task = user.current_task_key
         user.completed_tasks.append(completed_task)
         user.current_task_index += 1
         
         if user.current_task_index >= len(TASKS_ORDER):
-            # ВСЕ ЗАДАНИЯ ВЫПОЛНЕНЫ
             await update.message.reply_text(
                 f"✅ ЗАДАНИЕ {current_num}/3 ВЫПОЛНЕНО!\n\n"
                 f"🎉 ПОЗДРАВЛЯЮ! ТЫ ВЫПОЛНИЛ ВСЕ 3 ЗАДАНИЯ!\n\n"
@@ -230,7 +222,6 @@ async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
             dummy = DummyQuery(user_id)
             await show_current_task(dummy, user)
         else:
-            # ПЕРЕХОДИМ К СЛЕДУЮЩЕМУ ЗАДАНИЮ
             await update.message.reply_text(
                 f"✅ ЗАДАНИЕ {current_num}/3 ВЫПОЛНЕНО!\n\n"
                 f"Отлично! Переходим к заданию {current_num + 1}/3... 🚀"
@@ -268,7 +259,7 @@ def main():
     print("🎮 Standoff 2 Gold Bot - 5000 G-Coins")
     print("📋 Задания по порядку:")
     print("   1. Яндекс Браузер")
-    print("   2. СберПрайм")
+    print("   2. СберПрайм (с предупреждением о VPN)")
     print("   3. 24TV")
     print("💰 Награда: 5000 G-Coins после 3 заданий")
     application = Application.builder().token(TOKEN).build()
