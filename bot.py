@@ -4,28 +4,25 @@ import asyncio
 import random
 import string
 from typing import Dict
-from dotenv import load_dotenv
-
-load_dotenv()
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telegram.constants import ParseMode
-from telegram.request import HTTPXRequest
-import httpx
 
-TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("Токен не найден! Установите TELEGRAM_BOT_TOKEN")
+# ТОКЕН ПРЯМО В КОДЕ
+TOKEN = "8445466695:AAGORyjHM8ghSs2jhKblwwrO0-aJNp6Zuq8"
 
+# Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
+# Словарь для хранения состояний пользователей
 user_data: Dict[int, Dict] = {}
 
+# Задания
 TASKS = {
     1: {
         "200": {
@@ -46,6 +43,7 @@ TASKS = {
     }
 }
 
+# Ссылки на задания
 TASK_LINKS = {
     "yandex": "https://vk.cc/cVUvvJ",
     "sberprime": "https://vk.cc/cVUvEb",
@@ -58,11 +56,13 @@ TASK_NAMES = {
     "24tv": "Активировать промокод в сервисе 24TV"
 }
 
+# Функция для генерации промокода
 def generate_promo_code() -> str:
     characters = string.ascii_letters + string.digits
     length = random.randint(9, 12)
     return ''.join(random.choice(characters) for _ in range(length))
 
+# Класс для управления состоянием пользователя
 class UserState:
     def __init__(self, user_id: int, username: str):
         self.user_id = user_id
@@ -89,6 +89,7 @@ class UserState:
         if self.screenshot_check_task:
             self.screenshot_check_task.cancel()
 
+# Главное меню
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int = None):
     if user_id is None:
         user_id = update.effective_user.id
@@ -125,6 +126,7 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id:
             parse_mode=ParseMode.HTML
         )
 
+# Обработчик выбора награды
 async def handle_reward_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -288,23 +290,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_cancel(update, context)
 
 def main():
-    # Пытаемся использовать прокси (если нужен)
-    # Раскомментируйте и укажите свои настройки прокси если Telegram заблокирован
-    # proxy_url = "socks5://127.0.0.1:1080"  # Пример для SOCKS5 прокси
-    # proxy_url = "http://127.0.0.1:8080"    # Пример для HTTP прокси
+    print("🚀 Бот запускается...")
+    application = Application.builder().token(TOKEN).build()
     
-    try:
-        # Пробуем без прокси
-        request = HTTPXRequest(connect_timeout=30.0, read_timeout=30.0)
-        application = Application.builder().token(TOKEN).request(request).build()
-        print("🚀 Бот запускается без прокси...")
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
-    except Exception as e:
-        print(f"❌ Ошибка подключения: {e}")
-        print("\n📌 Если Telegram заблокирован:")
-        print("1. Используйте VPN")
-        print("2. Или раскомментируйте прокси в коде")
-        print("3. Или установите Python 3.11")
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(handle_callback))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_screenshot))
+    
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
     main()
