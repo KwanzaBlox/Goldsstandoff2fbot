@@ -4,6 +4,7 @@ import asyncio
 import random
 import string
 from typing import Dict
+from datetime import datetime, timedelta
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
@@ -60,6 +61,69 @@ class UserState:
         self.reward_claimed = False
         self.promo_code = None
         self.completed_tasks = []
+        self.last_activity = datetime.now()  # Время последней активности
+        self.reminder_sent = False  # Отправляли ли напоминание
+
+async def send_reminder(context: ContextTypes.DEFAULT_TYPE, user_id: int, task_name: str, task_num: int):
+    """Отправляет напоминание пользователю"""
+    try:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=f"⏰ НАПОМИНАНИЕ!\n\n"
+                 f"Ты начал выполнять задания, но так и не завершил!\n\n"
+                 f"📋 Ты остановился на <b>{task_name}</b> (Задание {task_num}/3)\n\n"
+                 f"🎁 Не забывай, что за выполнение 3 заданий ты получишь 5000 G-Coins!\n\n"
+                 f"👉 Продолжить - просто отправь скриншот для этого задания\n"
+                 f"❌ Отменить - нажми /start",
+            parse_mode=ParseMode.HTML
+        )
+        logger.info(f"Напоминание отправлено пользователю {user_id}")
+    except Exception as e:
+        logger.error(f"Ошибка отправки напоминания {user_id}: {e}")
+
+async def check_reminders(context: ContextTypes.DEFAULT_TYPE):
+    """Проверяет всех пользователей на необходимость напоминания"""
+    now = datetime.now()
+    to_remove = []
+    
+    for user_id, user in user_data.items():
+        # Пропускаем тех, кто уже получил награду
+        if user.reward_claimed:
+            to_remove.append(user_id)
+            continue
+        
+        # Пропускаем тех, у кого нет активных заданий
+        if user.current_task_index >= len(TASKS_ORDER):
+            to_remove.append(user_id)
+            continue
+        
+        # Проверяем время бездействия (1-2 часа)
+        time_diff = now - user.last_activity
+        hours_passed = time_diff.total_seconds() / 3600
+        
+        # Если прошло больше 1 часа и напоминание еще не отправляли
+        if hours_passed >= 1 and not user.reminder_sent:
+            task_key = TASKS_ORDER[user.current_task_index]
+            task_name = TASK_INFO[task_key]["name"]
+            task_num = user.current_task_index + 1
+            
+            await send_reminder(context, user_id, task_name, task_num)
+            user.reminder_sent = True
+        
+        # Если прошло больше 2 часов - отправляем повторное напоминание
+        elif hours_passed >= 2 and user.reminder_sent:
+            task_key = TASKS_ORDER[user.current_task_index]
+            task_name = TASK_INFO[task_key]["name"]
+            task_num = user.current_task_index + 1
+            
+            await send_reminder(context, user_id, task_name, task_num)
+            # Обновляем время, чтобы не спамить
+            user.last_activity = now
+    
+    # Очищаем завершенных пользователей
+    for user_id in to_remove:
+        if user_id in user_data:
+            del user_data[user_id]
 
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -96,12 +160,18 @@ async def start_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = UserState(user_id, query.from_user.username)
     user.current_task_index = 0
     user.completed_tasks = []
+    user.last_activity = datetime.now()
+    user.reminder_sent = False
     
     user_data[user_id] = user
     
     await show_current_task(query, user)
 
 async def show_current_task(query, user: UserState):
+    # Обновляем время активности
+    user.last_activity = datetime.now()
+    user.reminder_sent = False
+    
     if user.current_task_index >= len(TASKS_ORDER):
         user.promo_code = generate_promo_code()
         user.reward_claimed = True
@@ -136,7 +206,8 @@ async def show_current_task(query, user: UserState):
         f"После выполнения отправь СКРИНШОТ подтверждения\n"
         f"⏱ Автопроверка займет 5 секунд\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"❌ Отмена - нажми /start"
+        f"❌ Отмена - нажми /start\n"
+        f"⏰ Если забудешь - я напомню через 1-2 часа!"
     )
     
     keyboard = [[InlineKeyboardButton("◀️ ОТМЕНИТЬ ВСЕ", callback_data="cancel")]]
@@ -178,6 +249,10 @@ async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user.waiting_for_screenshot:
         await update.message.reply_text("❌ Сейчас не нужно отправлять скриншот. Нажми /start")
         return
+    
+    # Обновляем время активности
+    user.last_activity = datetime.now()
+    user.reminder_sent = False
     
     photo = update.message.photo[-1]
     user.waiting_for_screenshot = False
@@ -254,6 +329,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "cancel":
         await handle_cancel(update, context)
 
+async def reminder_callback(context: ContextTypes.DEFAULT_TYPE):
+    """Функция для периодической проверки напоминаний"""
+    await check_reminders(context)
+
 def main():
     print("🚀 БОТ ЗАПУСКАЕТСЯ...")
     print("🎮 Standoff 2 Gold Bot - 5000 G-Coins")
@@ -262,7 +341,15 @@ def main():
     print("   2. СберПрайм (с предупреждением о VPN)")
     print("   3. 24TV")
     print("💰 Награда: 5000 G-Coins после 3 заданий")
+    print("⏰ Напоминания: через 1 и 2 часа бездействия")
+    
     application = Application.builder().token(TOKEN).build()
+    
+    # Добавляем задачу на проверку напоминаний каждые 30 минут
+    job_queue = application.job_queue
+    if job_queue:
+        job_queue.run_repeating(reminder_callback, interval=1800, first=60)  # Каждые 30 минут
+        print("✅ Система напоминаний запущена (проверка каждые 30 минут)")
     
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(handle_callback))
