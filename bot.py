@@ -46,11 +46,11 @@ TASK_INFO = {
     }
 }
 
-def generate_prime_code() -> str:
-    """Генерирует код формата CS2-PRIME-XXXX"""
+def generate_code() -> str:
+    """Генерирует код формата XXXX-XXXX-XXXX"""
     chars = string.ascii_uppercase + string.digits
-    part1 = "CS2"
-    part2 = "PRIME"
+    part1 = ''.join(random.choice(chars) for _ in range(4))
+    part2 = ''.join(random.choice(chars) for _ in range(4))
     part3 = ''.join(random.choice(chars) for _ in range(4))
     return f"{part1}-{part2}-{part3}"
 
@@ -166,7 +166,7 @@ async def show_current_task(query, user: UserState):
     user.reminder_sent = False
     
     if user.current_task_index >= len(TASKS_ORDER):
-        user.promo_code = generate_prime_code()
+        user.promo_code = generate_code()
         user.reward_claimed = True
         
         await query.edit_message_text(
@@ -333,6 +333,7 @@ def main():
     print("   2. СберПрайм")
     print("   3. 24TV")
     print("💰 Награда: 5000 G-Coins после 3 заданий")
+    print("🎁 Формат промокода: XXXX-XXXX-XXXX")
     print("⏰ Напоминания: через 1 и 2 часа бездействия")
     
     application = Application.builder().token(TOKEN).build()
